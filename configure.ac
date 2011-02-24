@@ -2,7 +2,7 @@
 
 AC_PREREQ([2.63])
 AC_INIT([Xilinx Tools],
-        [0.0.1-devel],
+        [1.0.0],
         [xl-tools-bug@li-pro.net],
         [xl-tools],
         [http://www.li-pro.de/xilinx_mb:start])
