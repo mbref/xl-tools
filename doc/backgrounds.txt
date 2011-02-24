@@ -1,0 +1,15 @@
+Subject: [microblaze-uclinux] Petalinux On Stpartan3E500
+From: <makarand.vispute@xxxxxxxxx>
+Date: Tue, 16 Sep 2008 16:14:39 +0530
+
+...
+I have flashed the image of UBoot (from Petalogix) at the start of the
+Flash Memory. When I download my bit file and run the XMD, then I have
+seen that it is branched to the first location of the flash. The content
+is 0xb8b40008. According to documentation it is correct.
+
+I can see the FS bootloader's print messages on the Serial console. After
+showing "FS-BOOT: Booting image..." it just stops there only.
+...
+_____________________________________________________________________________
+

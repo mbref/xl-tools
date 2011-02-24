@@ -1,0 +1,801 @@
+#!/bin/bash
+#
+# (C) Copyright 2010-2011 Li-Pro.Net
+#
+# Stephan Linz <linz@li-pro.net>
+#
+# See file CREDITS for list of people who contributed to this
+# project.
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation; either version 2 of
+# the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+# MA 02111-1307 USA
+#
+# TODO:
+#  - xlblob_elf2bin(): improve the size calculation of the payload
+#    binary data in respect of different section alignments and
+#    inter section gaps
+#
+#set -n
+#set -x
+set -e
+
+if test ${BASH_VERSINFO[0]} -lt 3; then
+	echo "FATAL: wrong Bash version, need Bash 3 or above"
+	exit 3
+fi
+
+#
+# array of directly executable programs
+#
+ARCH=0	# architecture string for cross binaries
+AWK=1	# index for awk
+SED=2	# index for sed
+ST=3	# index for stat
+CAS=4	# index for ${CROSS}-as
+COCP=5	# index for ${CROSS}-objcopy
+CODP=6	# index for ${CROSS}-objdump
+CSIZE=7	# index for ${CROSS}-size
+PROGS_NUM=8
+CROSS_PROGS="as objcopy objdump size"
+
+#
+# empty array of files we have to remove on exit
+#
+declare -a FILES_TO_REMOVE
+
+#
+# array indices for payload data
+#
+ELF=0	# payload data elf file name
+BIN=1	# payload data bin file name (will be temporary generated)
+TYPE=2	# payload data content type (16 bit integer value)
+NAME=3	# payload data content name (32 character string)
+DATE=4	# payload data content date (32 character string)
+BASE=5	# payload data base address (from elf file)
+SIZE=6	# payload data binary size  (from elf file)
+PAYLOAD_NUM=7
+
+#
+# array indices for global blob informations
+#
+VERS=0	# version of payload header (16 bit integer value)
+OUTP=1	# blob base name without suffix
+ADDR=2	# address to realocate the whole blob (bootstub+payload)
+BLOB_NUM=3
+
+#
+# default payload header version as expacted by this bootstub
+# code and XL-Boot in target device
+#
+HEADER_VERSION=0x0100
+
+version() {
+	echo "$1@PACKAGE_STRING@ (@BUILDDATE@ @BUILDTIME@)$2"
+}
+
+copyright() {
+	echo "$1Copyright (C) 2010-2011 Li-Pro.Net$2"
+	echo "$1This is free software; see the source for copying conditions.  There is NO$2"
+	echo "$1warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.$2"
+}
+
+hint_tools() {
+	declare +x bin
+	declare +x pfx
+	declare +x arch=${1}
+	arch=${arch:="ARCH"}
+	declare +x prefixes=$(xlboot_arch2prefix "${arch}")
+	echo "Please be aware that you will need the \"${arch}\" cross"
+	echo "development tools for the following steps. Make sure that the"
+	echo "directory which contains the binaries of your toolchain are in"
+	echo "your PATH. Following binaries are expacted:"
+	echo
+	for bin in ${CROSS_PROGS}; do
+		printf "%10.10s: " ${bin}
+		for pfx in ${prefixes}; do
+			echo "${pfx}-${bin}"
+			echo -n "            "
+		done
+		echo
+	done
+	echo "Please read wiki page: http://xilinx.wikidot.com/mb-gnu-tools"
+	echo
+}
+
+usage() {
+	echo "Usage: $(basename $0) [-n name] [-r addr] -t type -o blob elf"
+	echo "          -n ==> set payload name to 'name'"
+	echo "          -t ==> set payload type to 'type' (see Types)"
+	echo "          -r ==> realocate blob binary to 'addr'"
+	echo "          -o ==> write blob binary to 'blob'"
+	echo "                 use payload data from 'elf'"
+	echo "       $(basename $0) [-n name] -t type -b elf"
+	echo "          -n ==> set payload name to 'name'"
+	echo "          -t ==> set payload type to 'type' (see Types)"
+	echo "          -b ==> show bootstub assembly listing"
+	echo "                 use payload data from 'elf'"
+	echo "       $(basename $0) -h | -v"
+	echo "          -h ==> show this short help message"
+	echo "          -v ==> show version and copyright"
+	echo
+	echo "Types: Standalone, Xilkernel, eCos, FreeRTOS, U-Boot, Linux"
+	echo
+	[ -n "$1" ] && exit $1 || exit 1
+}
+
+error() {
+	echo "ERROR: ${FUNCNAME[1]}::${BASH_LINENO[0]}: $@" >&2
+}
+
+onexit() {
+	for file in ${FILES_TO_REMOVE[@]}; do
+		rm -f ${file}
+	done
+}
+
+#
+# convert a given architecture to a list of possible
+# binery prefixes to find related cross tools
+#
+# $1	architecture (string)
+#
+# return:
+# 1:	wrong argument
+# 2:	error in value, ex. unknown arch
+#
+xlboot_arch2prefix() {
+	if [ $# -ne 1 ]; then
+		error "wrong arguments"
+		return 1
+	fi
+
+	case "$1" in
+	    "Microblaze")
+		echo "mb mb-linux microblaze-unknown-linux-gnu"
+		;;
+	    *)
+		error "unknown architecture"
+		return 2
+		;;
+	esac
+
+	return 0
+}
+
+#
+# convert a given abbreviation to a valid type number
+#
+# $1	name (string)
+#
+# return:
+# 1:	wrong argument
+#
+xlboot_abbr2type() {
+	if [ $# -ne 1 ]; then
+		error "wrong arguments"
+		return 1
+	fi
+
+	case "$1" in
+	    "Standalone")
+		echo "0x0100"
+		;;
+	    "Xilkernel")
+		echo "0x0200"
+		;;
+	    "eCos")
+		echo "0x0300"
+		;;
+	    "FreeRTOS")
+		echo "0x0400"
+		;;
+	    "U-Boot")
+		echo "0x0500"
+		;;
+	    "Linux")
+		echo "0x0600"
+		;;
+	    *)
+		echo "0x0000"
+		;;
+	esac
+
+	return 0
+}
+
+#
+# generate PIC bootstub code and write to stdout
+#
+# $1	reference to PROG array
+# $2	reference to PAYLOAD array
+# $3	reference to BLOB array
+#
+# return:
+# 1:	wrong arguments
+#
+xlblob_gen_bootstub() {
+	if [ $# -ne 3 ]; then
+		error "wrong arguments (call from ${FUNCNAME[1]}::${BASH_LINENO[0]})"
+		return 1
+	fi
+
+	eval declare -a +x p=(\${$1[@]})
+	eval declare -a +x pl=(\${$2[@]})
+	eval declare -i +x hv=(\${$3[$VERS]})
+	declare +x asv=$(${p[$CAS]} --version | \
+			${p[$AWK]} '{if(NR==1){print $0}}')
+	declare +x asc=$(${p[$CAS]} --version | \
+			${p[$AWK]} '{if(NR==2){print $0}}')
+	declare +x ocv=$(${p[$COCP]} --version | \
+			${p[$AWK]} '{if(NR==1){print $0}}')
+	declare +x occ=$(${p[$COCP]} --version | \
+			${p[$AWK]} '{if(NR==2){print $0}}')
+	declare +x odv=$(${p[$CODP]} --version | \
+			${p[$AWK]} '{if(NR==1){print $0}}')
+	declare +x odc=$(${p[$CODP]} --version | \
+			${p[$AWK]} '{if(NR==2){print $0}}')
+	declare +x szv=$(${p[$CSIZE]} --version | \
+			${p[$AWK]} '{if(NR==1){print $0}}')
+	declare +x szc=$(${p[$CSIZE]} --version | \
+			${p[$AWK]} '{if(NR==2){print $0}}')
+
+	version ".title \"" "\""
+	echo ".sbttl \"PIC bootstub code for XL-Boot\""
+	echo
+	version ".print \"" "\""
+	copyright ".print \"" "\""
+
+	{
+		cat <<EOF
+
+	.print "--------------------------------------------------"
+	.print "@@CROSS_AS_VERS@@"
+	.print "@@CROSS_AS_COPY@@"
+	.print "@@CROSS_AS@@"
+	.print "@@CROSS_OBJCOPY@@"
+	.print "@@CROSS_OBJDUMP@@"
+	.print "@@CROSS_SIZE@@"
+
+	.nolist
+	/*
+	 * PIC bootstub code for XL-Boot
+	 *
+	 * This code snipped is a very simple blob for XL-Boot. The blob will
+	 * copy payload data from FLASH to RAM and branch to target address
+	 * in RAM. XL-Boot will identified a blob by the first fixed assmebly
+	 * mnemonic (brlid r5, locator). XL-Boot itself branch immediately
+	 * to this blob key.
+	 *
+	 * The payload data meta information will stored in a flatted header
+	 * structure on offset __plo. The header is prepared for future
+	 * development. So we can support different copy and/or preamble
+	 * code for different payload data content.
+	 *
+	 */
+
+	/*
+	 * The payload data consist of a header with meta informations and
+	 * the user data itself together. The payload header begins on the
+	 * payload offset __plo. The user data are at the last entry of the
+	 * payload header structure on offset __pld.
+	 *
+	 * payload header structure on offset __plo:
+	 *
+	 *	offset	name	type		description
+	 * -------------------------------------------------------------------
+	 *	0x00	__plv	hword		version of payload header
+	 *	0x02	__plt	hword		type of payload data
+	 *	0x04	__plu	word		reserved for user data
+	 *	0x08	__pli	char[32]	name string of payload data
+	 *	0x28	__plb	char[32]	builddate string of payload data
+	 *	0x48	__pla	word		destination address
+	 *	0x4C	__pls	word		size of payload data
+	 *	0x50	__pld	word[]		payload data
+	 *
+	 * payload header versions on offset __plv = __plo + 0x00:
+	 *
+	 *	value		meaning
+	 * -------------------------------------------------------------------
+	 *	0x0000		unknown header version
+	 *	0x0100		V1 (current)
+	 *
+	 * payload data types on offset __plt = __plo + 0x02:
+	 *
+	 *	value		meaning
+	 * -------------------------------------------------------------------
+	 *	0x0000		unknown payload data
+	 *	0x0100		Xilinx standalone (binary)
+	 *	0x0101			reserved for SREC
+	 *	0x01xx			reserved for future format
+	 *	0x0200		Xilinx XilKernel (binary)
+	 *	0x0201			reserved for SREC
+	 *	0x02xx			reserved for future format
+	 *	0x0300		FSF RedBoot/eCos (binary)
+	 *	0x0301			reserved for SREC
+	 *	0x03xx			reserved for future format
+	 *	0x0400		FreeRTOS/SafeRTOS (binary)
+	 *	0x0401			reserved for SREC
+	 *	0x04xx			reserved for future format
+	 *	0x0500		U-Boot (binary)
+	 *	0x0501			reserved for SREC
+	 *	0x05xx			reserved for future format
+	 *	0x0600		Linux Kernel (binary)
+	 *	0x0601			reserved for SREC
+	 *	0x06xx			reserved for future format
+	 */
+	.list
+
+	.print "--------------------------------------------------"
+	.print "header version: @@HEADER_VERSION@@"
+	.print "content type:   @@PAYLOAD_TYPE@@"
+	.print "ident string:   @@PAYLOAD_IDENT@@"
+	.print "build date:     @@PAYLOAD_BUILD@@"
+	.print "payload addr:   @@PAYLOAD_BASE@@"
+	.print "payload size:   @@PAYLOAD_SIZE@@"
+
+	.equiv	__plo, 0x60
+	.equiv	__plv, 0x00
+	.equiv	__plt, 0x02
+	.equiv	__plu, 0x04
+	.equiv	__pli, 0x08
+	.equiv	__plb, 0x28
+	.equiv	__pla, 0x48
+	.equiv	__pls, 0x4C
+	.equiv	__pld, 0x50
+
+	.section .text
+
+	.org 0
+	.align 2
+
+	.global _start
+	.global bootstub
+	.func bootstub
+
+_start:
+bootstub:
+	/* force XL-Boot image key 0xb8b40008 */
+	brlid	r5, locator	/* r5 <-- PC, branche to locator (r5 += 8) */
+	nop
+
+
+	/*
+	 * payload locator from FLASH to RAM (copier)
+	 */
+	.org 8
+locator:
+	addi	r5, r5, __plo	/* r5 points to payload header */
+	lwi	r6, r5, __pla	/* load r6 with image base address (target) */
+	lwi	r7, r5, __pls	/* load r7 with image size (in byte) */
+	addi	r5, r5, __pld	/* r5 points to payload data (behind header) */
+	add	r4, r6, r0	/* save r6 in r4 (image base address in RAM) */
+	addi	r7, r7, 3	/* rounding up payload size to next multiple */
+	srl	r7, r7		/* of 32bit by doing: r7 := (r7 + 3) / 4 */
+	srl	r7, r7		/* r7 contain amount of payload words */
+
+copyloop:
+	beqi	r7, copy_done	/* exit to copy_done if payload word counter
+				   goeas to zero (nothing left to copy) */
+	lw	r8, r5, r0	/* load r8 with image word pointed by r5 */
+	sw	r8, r6, r0	/* store r8 to RAM pointed by r6 */
+	addi	r5, r5, 4	/* increment payload data pointer r5*/
+	addi	r6, r6, 4	/* increment target RAM pointer r6 */
+	addi	r7, r7, -1	/* decrement payload word counter */
+	bri	copyloop	/* and loop again */
+
+copy_done:
+	bra	r4		/* branch to copied payload image in RAM */
+
+
+	/*
+	 * payload head (ELF image meta informations)
+	 */
+	.org __plo
+payload:
+
+	.org __plo + __plv
+_pl_version:			/* header version (code see above) */
+	.hword @@HEADER_VERSION@@
+
+	.org __plo + __plt
+_pl_type:			/* data type (code see above) */
+	.hword @@PAYLOAD_TYPE@@
+
+	.org __plo + __plu
+_pl_user:			/* user data (reserved) */
+	.word @@PAYLOAD_USER@@
+
+	.org __plo + __pli
+_pl_ident:			/* data ident string */
+	.asciz "@@PAYLOAD_IDENT@@"
+
+	.org __plo + __plb
+_pl_builddate:			/* blob builddate string */
+	.asciz "@@PAYLOAD_BUILD@@"
+
+	.org __plo + __pla
+_pl_addr:			/* data base address to copy to */
+	.word @@PAYLOAD_BASE@@
+
+	.org __plo + __pls
+_pl_size:			/* data size to copy */
+	.word @@PAYLOAD_SIZE@@
+
+	.org __plo + __pld
+_pl_data:			/* data start */
+
+	.end bootstub
+EOF
+	} | ${p[$SED]} \
+		-e "s|@@CROSS_AS@@|${p[$CAS]:=as}|g" \
+		-e "s|@@CROSS_AS_VERS@@|${asv:=as-version}|g" \
+		-e "s|@@CROSS_AS_COPY@@|${asc:=as-copyright}|g" \
+		-e "s|@@CROSS_OBJCOPY@@|${p[$COCP]:=objcopy}|g" \
+		-e "s|@@CROSS_OBJCOPY_VERS@@|${ocv:=objcopy-version}|g" \
+		-e "s|@@CROSS_OBJCOPY_COPY@@|${occ:=objcopy-copyright}|g" \
+		-e "s|@@CROSS_OBJDUMP@@|${p[$CODP]:=objdump}|g" \
+		-e "s|@@CROSS_OBJDUMP_VERS@@|${odv:=objdump-version}|g" \
+		-e "s|@@CROSS_OBJDUMP_COPY@@|${odc:=objdump-copyright}|g" \
+		-e "s|@@CROSS_SIZE@@|${p[$CSIZE]:=size}|g" \
+		-e "s|@@CROSS_SIZE_VERS@@|${szv:=size-version}|g" \
+		-e "s|@@CROSS_SIZE_COPY@@|${szc:=size-copyright}|g" \
+		-e "s|@@HEADER_VERSION@@|${hv:=0}|g" \
+		-e "s|@@PAYLOAD_TYPE@@|${pl[$TYPE]:=0}|g" \
+		-e "s|@@PAYLOAD_USER@@|${pu:=0}|g" \
+		-e "s|@@PAYLOAD_IDENT@@|${pl[$NAME]:="<unknown_ident>"}|g" \
+		-e "s|@@PAYLOAD_BUILD@@|${pl[$DATE]:="<unknown_blddate>"}|g" \
+		-e "s|@@PAYLOAD_BASE@@|${pl[$BASE]}|g" \
+		-e "s|@@PAYLOAD_SIZE@@|${pl[$SIZE]}|g"
+}
+
+#
+# generate and assemble blob code
+#
+# $1	reference to PROG array
+# $2	reference to PAYLOAD array
+# $3	reference to BLOB array
+#
+# return:
+# 1:	wrong argument
+# 2:	permission denied
+#	can not read from PAYLOAD[$BIN]
+#
+xlblob_assembly_blob() {
+	if [ $# -ne 3 ]; then
+		error "wrong arguments"
+		return 1
+	fi
+
+	eval declare -a +x p=(\${$1[@]})
+	eval declare -a +x pl=(\${$2[@]})
+	eval declare -a +x bl=(\${$3[@]})
+
+	if [ ! -r ${pl[$BIN]} ]; then
+		error "can not read file: ${pl[$BIN]}"
+		return 2
+	fi
+
+	# generate/assemble bootstub
+	xlblob_gen_bootstub p pl bl | \
+		${p[$CAS]} -adhls=${bl[$OUTP]}.lst -o ${bl[$OUTP]}.o -- &&
+	FILES_TO_REMOVE+=("${bl[$OUTP]}.o") &&
+	${p[$COCP]} --set-start ${bl[$ADDR]:=0} \
+		--adjust-section-vma=.text=${bl[$ADDR]:=0} \
+		--adjust-section-vma=.data=${bl[$ADDR]:=0} \
+		--adjust-section-vma=.bss=${bl[$ADDR]:=0} \
+		-O elf32-microblaze ${bl[$OUTP]}.o ${bl[$OUTP]}.elf &&
+	_pl_data=$(${p[$CODP]} -t ${bl[$OUTP]}.elf | \
+		${p[$AWK]} '/_pl_data$/{ print "0x" $1 }') &&
+	${p[$COCP]} --add-section=.pld=${pl[$BIN]} \
+		--adjust-section-vma=.pld=${_pl_data} \
+		--set-section-flags=.pld=alloc,load,data ${bl[$OUTP]}.elf &&
+	${p[$COCP]} -O binary ${bl[$OUTP]}.elf ${bl[$OUTP]}.bin &&
+	${p[$COCP]} -O srec ${bl[$OUTP]}.elf ${bl[$OUTP]}.srec || return 1
+
+	return 0
+}
+
+#
+# parse payload data file and generate binary image
+#
+# $1	reference to PROG array
+# $2	reference to PAYLOAD array
+#
+# return:
+# 1:	wrong arguments
+# 2:	permission denied
+#	can not read from PAYLOAD[$ELF]
+#	can not write to PAYLOAD[$BIN]
+# 3:	FATAL: elf code and binary image size differ
+#
+xlblob_elf2bin() {
+	if [ $# -ne 2 ]; then
+		error "wrong arguments"
+		return 1
+	fi
+
+	eval declare -a +x p=(\${$1[@]})
+	eval declare +x elf=\${$2[$ELF]}
+	eval declare +x bin=\${$2[$BIN]}
+
+	if [ ! -r ${elf} ]; then
+		error "can not read file: ${elf}"
+		return 2
+	fi
+
+	if [ ! -w ${bin} ]; then
+		error "can not write file: ${bin}"
+		return 2
+	fi
+
+	${p[$COCP]} -O binary ${elf} ${bin}
+
+	# base address and code size from elf file
+	declare +x base=$(${p[$CODP]} -f ${elf} | \
+			${p[$AWK]} '/^start address/{ print $3 }')
+	declare +x size=$(${p[$CSIZE]} -t -d --target binary ${bin} | \
+			${p[$AWK]} '/TOTALS/{ print $4 }')
+
+	# size from bin file for comparison
+	declare +x stsize=$(${p[$ST]} ${bin} | \
+			${p[$AWK]} '/Size:/{ print $2 }')
+
+	# size comparison elf vs. bin to ensure correct conversion
+	if [ ${size} -ne ${stsize} ]; then
+		error "size differ: ${size} != ${stsize}"
+		return 3
+	fi
+
+	eval $2[$BASE]=\$\(printf "0x%x" \${base}\)
+	eval $2[$SIZE]=\$\(printf "0x%x" \${size}\)
+	return 0
+}
+
+#
+# check arrays and expand defaults on demand
+#
+# $1	reference to PAYLOAD array
+# $2	reference to BLOB array
+#
+# return:
+# 1:	wrong argument
+# 2:	error in value, ex. unknown type
+# 3:	error in array size, missing elements
+#
+xlblob_checkup() {
+	if [ $# -ne 2 ]; then
+		error "wrong arguments"
+		return 1
+	fi
+
+	declare +x el
+	eval declare +x type=\${$1[$TYPE]} # content type
+	eval declare +x name=\${$1[$NAME]} # ident string
+	eval declare +x date=\${$1[$DATE]} # build date
+	eval declare +x vers=\${$2[$VERS]} # header version
+	eval declare +x outp=\${$2[$OUTP]} # blob output name
+	eval declare +x addr=\${$2[$ADDR]} # bootstub realoc address
+
+	# convert type number to hex
+	if [ -n ${type} ]; then
+		eval $1[$TYPE]=\$\(printf "0x%04x" ${type}\)
+	fi
+
+	# if unset, set payload name to elf file name
+	if [ -z ${name} ]; then
+		eval name=\$\(basename \${$1[$ELF]}\)
+	fi
+
+	# cut off payload name to 31 characters (one left for \0)
+	if [ -n ${name} ]; then
+		eval $1[$NAME]=\$\(printf "%0.31s" ${name}\)
+	fi
+
+	# cut off build date to 31 characters (one left for \0)
+	if [ -n ${date} ]; then
+		eval $1[$DATE]=\$\(printf "%0.31s" ${date}\)
+	fi
+
+	# convert type number to hex
+	if [ -n ${vers} ]; then
+		eval $2[$VERS]=\$\(printf "0x%04x" ${vers}\)
+	fi
+
+	# if unset, set blob output to 'xlblob'
+	if [ -z ${outp} ]; then
+		eval $2[$OUTP]="xlblob"
+	fi
+
+	# if unset, set realocation address to zero
+	if [ -z ${addr} ]; then
+		eval echo $2[$ADDR]=0
+	fi
+
+	# check if known content type
+	if [ "${type}" == "0x0000" ]; then
+		error "unknown type ${type}"
+		return 2
+	fi
+
+	# check expacted elements of PAYLOAD
+	eval el=\${#$1[@]}
+	if [ ${el} -ne ${PAYLOAD_NUM} ]; then
+		error "missing elements in PAYLOAD" \
+			"(${el} != ${PAYLOAD_NUM})"
+		eval error "PAYLOAD=\(\${$1[@]}\)"
+		return 3
+	fi
+
+	# check expacted elements of BLOB
+	eval el=\${#$2[@]}
+	if [ ${el} -ne ${BLOB_NUM} ]; then
+		error "missing elements in BLOB" \
+			"(${el} != ${BLOB_NUM})"
+		eval error "BLOB=\(\${$2[@]}\)"
+		return 3
+	fi
+
+	return 0
+}
+
+#
+# fill and check array for directly executable programs
+#
+# $1	reference to PROGS array
+#
+# return:
+# 1:	wrong argument
+# 2:	error in value, ex. unknown arch
+# 3:	error in array size, missing elements
+#
+xlblob_lookup_progs() {
+	if [ $# -ne 1 ]; then
+		error "wrong arguments"
+		return 1
+	fi
+
+	declare +x prefixes
+	declare +x pfx
+	declare +x bin
+	declare +x prog
+	declare +x el
+	declare -i +x i
+
+	# looking for standard binaries
+	eval $1[$AWK]=\$\(which awk\)
+	eval $1[$SED]=\$\(which sed\)
+	eval $1[$ST]=\$\(which stat\)
+
+	# get prefixes to use for cross-tool lookup
+	eval prefixes=\$\(xlboot_arch2prefix "\${$1[$ARCH]}"\)
+	if [ $? -ne 0 ]; then
+		eval error "unknown architecture \${$1[$ARCH]}"
+		return 2
+	fi
+
+	# looking for cross-tool binaries
+	let i=$CAS
+	for bin in ${CROSS_PROGS}; do
+		for pfx in ${prefixes}; do
+			prog=$(which ${pfx}-${bin})
+			if [ -n "${prog}" ]; then
+				eval $1[$i]="${prog}"
+				break
+			fi
+		done
+		i+=1
+	done
+
+	# check expacted elements of PROGS
+	eval el=\${#$1[@]}
+	if [ ${el} -ne ${PROGS_NUM} ]; then
+		error "missing elements in PROGS" \
+			"(${el} != ${PROGS_NUM})"
+		eval error "PROGS=\(\${$1[@]}\)"
+		eval hint_tools "\${$1[$ARCH]}" >&2
+		return 3
+	fi
+
+	return 0
+}
+
+main() {
+	declare -a +x PROGS
+	declare -a +x PAYLOAD
+	declare -a +x BLOB
+
+	PROGS[$ARCH]="Microblaze"
+	xlblob_lookup_progs PROGS || exit 1
+
+	PAYLOAD[$TYPE]=0
+	PAYLOAD[$DATE]=$(date "+%D-%T")
+
+	BLOB[$VERS]=${HEADER_VERSION}
+	BLOB[$ADDR]=0
+
+	# default output xlblob
+	DO_OUTPUT="xlblob"
+
+	while getopts ":bhr:n:o:t:v" opt; do
+		case "${opt}" in
+		    r)
+			BLOB[$ADDR]="${OPTARG}"
+			;;
+		    t)
+			PAYLOAD[$TYPE]=$(xlboot_abbr2type "${OPTARG}")
+			;;
+		    n)
+			PAYLOAD[$NAME]="${OPTARG}"
+			;;
+		    o)
+			BLOB[$OUTP]="${OPTARG}"
+			;;
+		    b)
+			DO_OUTPUT="bootstub"
+			;;
+		    h)
+			version; copyright; echo
+			usage 0
+			;;
+		    v)
+			version; copyright; echo
+			exit 0
+			;;
+		    *)
+			version; copyright; echo
+			usage
+			;;
+		esac
+	done
+
+	shift $((${OPTIND}-1))
+	PAYLOAD[$ELF]="${1}"
+	[ -z ${PAYLOAD[$ELF]} ] && usage
+
+	PAYLOAD[$BIN]=$(mktemp -t payload.bin.XXXXXXXXXX)
+	if [ ! -w ${PAYLOAD[$BIN]} ]; then
+		error "can not create temporary file: ${PAYLOAD[$BIN]}"
+		exit 1
+	fi
+
+	FILES_TO_REMOVE+=("${PAYLOAD[$BIN]}") &&
+
+	xlblob_elf2bin PROGS PAYLOAD &&
+	xlblob_checkup PAYLOAD BLOB &&
+	case $DO_OUTPUT in
+
+	    bootstub)
+		xlblob_gen_bootstub PROGS PAYLOAD BLOB
+		;;
+
+	    xlblob)
+		xlblob_assembly_blob PROGS PAYLOAD BLOB &&
+		echo "bootstub:       @$(${PROGS[$CODP]} -t ${BLOB[$OUTP]}.elf | \
+			${PROGS[$AWK]} '/bootstub$/{ print "0x" $1 }')" &&
+		echo "payload header: @$(${PROGS[$CODP]} -t ${BLOB[$OUTP]}.elf | \
+			${PROGS[$AWK]} '/payload$/{ print "0x" $1 }')" &&
+		echo "payload data:   @$(${PROGS[$CODP]} -t ${BLOB[$OUTP]}.elf | \
+			${PROGS[$AWK]} '/_pl_data$/{ print "0x" $1 }')"
+		;;
+
+	    *)	;;
+	esac || usage
+
+	exit 0
+}
+
+# regist signal handler and startup main()
+trap onexit INT TERM EXIT
+main "$@"

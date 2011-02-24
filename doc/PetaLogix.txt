@@ -1,0 +1,139 @@
+This document is an extraction of public informations made by
+
+PetaLogix Qld Pty Ltd.
+15 Nurstead St
+Camp Hill QLD 4152
+AUSTRALIA
+
+e-mail: privacy@petalogix.com
+phone:  +61-7-3009 0663
+
+______________________________________________________________________________
+
+Bibliography
+============
+
+[1] http://www.petalogix.com/resources/documentation/petalinux/userguide/petalinux-tools
+[2] http://www.petalogix.com/resources/documentation/petalinux/userguide/Bootloaders/FSboot
+[3] http://www.sysf.physto.se/~attila/ATLAS/Digitizer/Testbench/System_ISE_SoftMAC/linux/tools/common/petalogix/bin/petalinux-reloc-blob
+[4] http://www.sysf.physto.se/~attila/ATLAS/Digitizer/Testbench/System_ISE_SoftMAC/linux/software/petalinux-dist/Makefile
+[5] http://www.sysf.physto.se/~attila/ATLAS/Digitizer/Testbench/System_ISE_SoftMAC/linux/hardware/fs-boot/fs-boot.c
+
+______________________________________________________________________________
+
+PetaLinux Tools
+===============
+
+come from [1], 2011/02/20
+come from [3], 2011/02/20
+
+petalinux-reloc-blob
+--------------------
+Usage:
+        petalinux-reloc-blob [-l default-load-addr] -i payload.elf -o blobname
+
+Description:
+        Generate a PIC executable blob that copies the payload to its
+        linked address and executes it.  The blob itself may be loaded
+        to any physical address and executed, provided that
+                1) The payload's linked address is writeable
+                2) The blob's and payload's addresses don't overlap
+
+        Generates blobname.[srec|elf|bin] files into the working directory
+
+Required:
+        -i payload[.elf]
+                the fully relocated ELF file that will be the payload.
+        -o blobname
+                basename of the resulting blob files.
+
+Optional:
+        -l default-load-addr
+                address at which FS-boot will load the stub+payload
+
+______________________________________________________________________________
+
+First Stage Bootloader (FS-Boot)
+================================
+
+come from [2], 2011/02/20
+
+Introduction
+------------
+FS-Boot is a simple bootloader developed by PetaLogix, intended to serve as
+the primary bootstrap mechanism when the MicroBlaze CPU first boots. It is
+recommended for most applications that require a ready-to-run boot solution.
+
+In a typical system runtime scenario, FS-Boot's primary purpose is to
+bootstrap the main system bootloader (such as U-Boot) from flash memory.
+
+In the board bringup phase, FS-Boot may also be used to download an initial
+bootloader image (e.g. U-Boot), for first-time boot.
+
+FS-Boot has the following features:
+ - Small code footprint to minimize on-chip BRAM resource usage
+ - Serial download for main bootloader (U-Boot) SREC images
+ - Auto-boot capability to launch main bootloader from flash memory.
+ - Serial download for kernel SREC images (for testing a debug purposes)
+
+Scope and Background
+--------------------
+The reader should have knowledge of the following topics:
+ - Familiar with using Xilinx Platform Studio.
+ - Buiding hardware projects using Xilinx EDK tools.
+ - Working with PetaLinux
+
+Assumptions
+-----------
+This section make the following assumptions:
+ - The user's custom hardware project already exist and is added to PetaLinux.
+
+______________________________________________________________________________
+
+linux/software/petalinux-dist/Makefile
+======================================
+
+come from [4], 2011/02/20
+
+ifneq ($(BUILD_UBOOT),)
+	$(MAKE) -C $(UBOOTDIR) all
+	# run petalinux-reloc-blob on u-boot image
+	# -l is mapped to CONFIG_FLASH_BOOT_START
+	petalinux-reloc-blob -l $(FLASH_BOOT_START) -i $(UBOOTDIR)/u-boot -o $(UBOOTDIR)/$(UBOOTIMG)
+else
+	@echo Not building u-boot
+endif
+
+______________________________________________________________________________
+
+fs-boot.c
+=========
+
+come from [5], 2011/02/20
+
+/*!
+ * This routine evalutate if an address is
+ * in the FLASH memory range.
+ * 
+ * @param  addr - Address to evaluate.
+ *
+ * @return  0 - for not in FLASH
+ * @return  1 - for in FLASH
+ */
+static int image_exist(unsigned long image_addr)
+{
+	unsigned long *addr = image_addr;
+
+	/* 
+	 * b8b40008 corresponds to the instruction "brlid r5, locator;"
+	 * defined in the bootstub routine in petalinux-reloc-blob
+	 * This allows us to check if a valid u-boot image is in FLASH.
+	 * Note: any changes to the bootstub code will need to update this. 
+	 */
+	if (*addr == 0xb8b40008) {
+		return 1;
+	} else {
+		return 0;
+	}
+}
+

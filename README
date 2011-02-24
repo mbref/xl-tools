@@ -1,0 +1,23 @@
+Xilinx Tools
+============
+
+This is a collection of small host programs you need for Xilinx cross
+development especially MicroBlaze development.
+
+For some background informations please read text files in doc.
+
+mkxlboot
+--------
+
+The mkxlblob command is used to create combined images for use with the
+XL-Boot boot loader. These images are refered as XL-Blob.  The  XL-Blob
+consists of a simple bootstub code and payload data. These payload data
+can contain a secon stage boot loader,  the  linux  kernel,  other  os,
+firmware images, etc. The bootstub code is a simple PIC executable blob
+that copies payload data to its linked address and executes it.
+
+For more information please read man page: mkxlblob.1
+
+------------------------------------------------------------------------
+02/23/11-16:23:40
+Stephan Linz <linz@li-pro.net>
