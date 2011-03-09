@@ -1,4 +1,22 @@
-commit 7927be7be3947cde066c2d1973d5d8d899ff01d6
+commit ecd98ba30a538afb9e95bfddfe79691d348411b6
+Author: Stephan Linz <linz@li-pro.net>
+Date:	Wed Mar 9 21:56:33 2011 +0100
+
+    Prepare release 1.0.1
+
+    Signed-off-by: Stephan Linz <linz@li-pro.net>
+
+commit 20cefc362929c53ae08dff88036d5163dd71fbc6
+Author: Stephan Linz <linz@li-pro.net>
+Date:	Wed Mar 9 21:52:59 2011 +0100
+
+    new option -f: compatible to FS-Boot
+
+    Generate compatible blob to PetaLogix FS-Boot.
+
+    Signed-off-by: Stephan Linz <linz@li-pro.net>
+
+commit af08349a22cf802d6306b9d1e7454b2b8a256090
 Author: Stephan Linz <linz@li-pro.net>
 Date:	Thu Feb 24 12:36:43 2011 +0100
 
