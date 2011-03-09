@@ -73,7 +73,8 @@ PAYLOAD_NUM=7
 VERS=0	# version of payload header (16 bit integer value)
 OUTP=1	# blob base name without suffix
 ADDR=2	# address to realocate the whole blob (bootstub+payload)
-BLOB_NUM=3
+COMP=3	# compatible to PetaLogix FS-Boot
+BLOB_NUM=4
 
 #
 # default payload header version as expacted by this bootstub
@@ -115,22 +116,24 @@ hint_tools() {
 }
 
 usage() {
-	echo "Usage: $(basename $0) [-n name] [-r addr] -t type -o blob elf"
+	echo "Usage: $(basename $0) [-n name] [-r addr] [-t type] [-f] -o blob elf"
 	echo "          -n ==> set payload name to 'name'"
 	echo "          -t ==> set payload type to 'type' (see Types)"
 	echo "          -r ==> realocate blob binary to 'addr'"
+	echo "          -f ==> generate compatible blob to PetaLogix FS-Boot"
 	echo "          -o ==> write blob binary to 'blob'"
 	echo "                 use payload data from 'elf'"
-	echo "       $(basename $0) [-n name] -t type -b elf"
+	echo "       $(basename $0) [-n name] [-t type] [-f] -b elf"
 	echo "          -n ==> set payload name to 'name'"
 	echo "          -t ==> set payload type to 'type' (see Types)"
+	echo "          -f ==> generate compatible blob to PetaLogix FS-Boot"
 	echo "          -b ==> show bootstub assembly listing"
 	echo "                 use payload data from 'elf'"
 	echo "       $(basename $0) -h | -v"
 	echo "          -h ==> show this short help message"
 	echo "          -v ==> show version and copyright"
 	echo
-	echo "Types: Standalone, Xilkernel, eCos, FreeRTOS, U-Boot, Linux"
+	echo "Types: Standalone, Xilkernel, eCos, FreeRTOS, U-Boot, Linux, unknown (default)"
 	echo
 	[ -n "$1" ] && exit $1 || exit 1
 }
@@ -234,6 +237,7 @@ xlblob_gen_bootstub() {
 	eval declare -a +x p=(\${$1[@]})
 	eval declare -a +x pl=(\${$2[@]})
 	eval declare -i +x hv=(\${$3[$VERS]})
+	eval declare +x comp=(\${$3[$COMP]})
 	declare +x asv=$(${p[$CAS]} --version | \
 			${p[$AWK]} '{if(NR==1){print $0}}')
 	declare +x asc=$(${p[$CAS]} --version | \
@@ -252,11 +256,149 @@ xlblob_gen_bootstub() {
 			${p[$AWK]} '{if(NR==2){print $0}}')
 
 	version ".title \"" "\""
-	echo ".sbttl \"PIC bootstub code for XL-Boot\""
+	if [ "x$comp" == "xfsboot" ]; then
+		echo ".sbttl \"PIC bootstub code for XL-Boot (FS-Boot compatible)\""
+	else
+		echo ".sbttl \"PIC bootstub code for XL-Boot\""
+	fi
 	echo
 	version ".print \"" "\""
 	copyright ".print \"" "\""
 
+	if [ "x$comp" == "xfsboot" ]; then
+	{
+		cat <<EOF
+
+	.print "--------------------------------------------------"
+	.print "@@CROSS_AS_VERS@@"
+	.print "@@CROSS_AS_COPY@@"
+	.print "@@CROSS_AS@@"
+	.print "@@CROSS_OBJCOPY@@"
+	.print "@@CROSS_OBJDUMP@@"
+	.print "@@CROSS_SIZE@@"
+
+	.nolist
+	/*
+	 * PIC bootstub code for XL-Boot (FS-Boot compatible)
+	 *
+	 * This code snipped is a very simple blob for XL-Boot. The blob will
+	 * copy payload data from FLASH to RAM and branch to target address
+	 * in RAM. XL-Boot will identified a blob by the first fixed assmebly
+	 * mnemonic (brlid r5, locator). XL-Boot itself branch immediately
+	 * to this blob key.
+	 *
+	 * The payload data meta information will stored in a flatted header
+	 * structure on offset __plo. The header is prepared for future
+	 * development. So we can support different copy and/or preamble
+	 * code for different payload data content.
+	 *
+	 */
+
+	/*
+	 * The payload data consist of a header with meta informations and
+	 * the user data itself together. The payload header begins on the
+	 * payload offset __plo. The user data are at the last entry of the
+	 * payload header structure on offset __pld.
+	 *
+	 * payload header structure on offset __plo:
+	 *
+	 *	offset	name	type		description
+	 * -------------------------------------------------------------------
+	 *	0x00	__pla	word		destination address
+	 *	0x04	__pls	word		size of payload data
+	 *	0x08	__pld	word[]		payload data
+	 *
+	 */
+	.list
+
+	.print "--------------------------------------------------"
+	.print "payload addr:   @@PAYLOAD_BASE@@"
+	.print "payload size:   @@PAYLOAD_SIZE@@"
+
+	.equiv	__plo, 0x60
+	.equiv	__pla, 0x00
+	.equiv	__pls, 0x04
+	.equiv	__pld, 0x08
+
+	.section .text
+
+	.org 0
+	.align 2
+
+	.global _start
+	.global bootstub
+	.func bootstub
+
+_start:
+bootstub:
+	/* force XL-Boot image key 0xb8b40008 */
+	brlid	r5, locator	/* r5 <-- PC, branche to locator (r5 += 8) */
+	nop
+
+
+	/*
+	 * payload locator from FLASH to RAM (copier)
+	 */
+	.org 8
+locator:
+	addi	r5, r5, __plo	/* r5 points to payload header */
+	lwi	r6, r5, __pla	/* load r6 with image base address (target) */
+	lwi	r7, r5, __pls	/* load r7 with image size (in byte) */
+	addi	r5, r5, __pld	/* r5 points to payload data (behind header) */
+	add	r4, r6, r0	/* save r6 in r4 (image base address in RAM) */
+	addi	r7, r7, 3	/* rounding up payload size to next multiple */
+	srl	r7, r7		/* of 32bit by doing: r7 := (r7 + 3) / 4 */
+	srl	r7, r7		/* r7 contain amount of payload words */
+
+copyloop:
+	beqi	r7, copy_done	/* exit to copy_done if payload word counter
+				   goeas to zero (nothing left to copy) */
+	lw	r8, r5, r0	/* load r8 with image word pointed by r5 */
+	sw	r8, r6, r0	/* store r8 to RAM pointed by r6 */
+	addi	r5, r5, 4	/* increment payload data pointer r5*/
+	addi	r6, r6, 4	/* increment target RAM pointer r6 */
+	addi	r7, r7, -1	/* decrement payload word counter */
+	bri	copyloop	/* and loop again */
+
+copy_done:
+	bra	r4		/* branch to copied payload image in RAM */
+
+
+	/*
+	 * payload head (ELF image meta informations)
+	 */
+	.org __plo
+payload:
+
+	.org __plo + __pla
+_pl_addr:			/* data base address to copy to */
+	.word @@PAYLOAD_BASE@@
+
+	.org __plo + __pls
+_pl_size:			/* data size to copy */
+	.word @@PAYLOAD_SIZE@@
+
+	.org __plo + __pld
+_pl_data:			/* data start */
+
+	.end bootstub
+EOF
+	} | ${p[$SED]} \
+		-e "s|@@CROSS_AS@@|${p[$CAS]:=as}|g" \
+		-e "s|@@CROSS_AS_VERS@@|${asv:=as-version}|g" \
+		-e "s|@@CROSS_AS_COPY@@|${asc:=as-copyright}|g" \
+		-e "s|@@CROSS_OBJCOPY@@|${p[$COCP]:=objcopy}|g" \
+		-e "s|@@CROSS_OBJCOPY_VERS@@|${ocv:=objcopy-version}|g" \
+		-e "s|@@CROSS_OBJCOPY_COPY@@|${occ:=objcopy-copyright}|g" \
+		-e "s|@@CROSS_OBJDUMP@@|${p[$CODP]:=objdump}|g" \
+		-e "s|@@CROSS_OBJDUMP_VERS@@|${odv:=objdump-version}|g" \
+		-e "s|@@CROSS_OBJDUMP_COPY@@|${odc:=objdump-copyright}|g" \
+		-e "s|@@CROSS_SIZE@@|${p[$CSIZE]:=size}|g" \
+		-e "s|@@CROSS_SIZE_VERS@@|${szv:=size-version}|g" \
+		-e "s|@@CROSS_SIZE_COPY@@|${szc:=size-copyright}|g" \
+		-e "s|@@PAYLOAD_BASE@@|${pl[$BASE]}|g" \
+		-e "s|@@PAYLOAD_SIZE@@|${pl[$SIZE]}|g"
+	else
 	{
 		cat <<EOF
 
@@ -458,6 +600,7 @@ EOF
 		-e "s|@@PAYLOAD_BUILD@@|${pl[$DATE]:="<unknown_blddate>"}|g" \
 		-e "s|@@PAYLOAD_BASE@@|${pl[$BASE]}|g" \
 		-e "s|@@PAYLOAD_SIZE@@|${pl[$SIZE]}|g"
+	fi
 }
 
 #
@@ -724,11 +867,12 @@ main() {
 
 	BLOB[$VERS]=${HEADER_VERSION}
 	BLOB[$ADDR]=0
+	BLOB[$COMP]=""
 
 	# default output xlblob
 	DO_OUTPUT="xlblob"
 
-	while getopts ":bhr:n:o:t:v" opt; do
+	while getopts ":bfhr:n:o:t:v" opt; do
 		case "${opt}" in
 		    r)
 			BLOB[$ADDR]="${OPTARG}"
@@ -744,6 +888,9 @@ main() {
 			;;
 		    b)
 			DO_OUTPUT="bootstub"
+			;;
+		    f)
+			BLOB[$COMP]="fsboot"
 			;;
 		    h)
 			version; copyright; echo
