@@ -1,14 +1,10 @@
 # use: autoreconf -i
 
-AC_PREREQ([2.63])
-AC_INIT([Xilinx Tools],
-        [1.0.1],
-        [xl-tools-bug@li-pro.net],
-        [xl-tools],
-        [http://www.li-pro.de/xilinx_mb:start])
+AC_PREREQ(2.65)
+AC_INIT([Xilinx Tools],[1.0.1],[xl-tools-bug@li-pro.net],[xl-tools],[http://www.li-pro.de/xilinx_mb:start])
 
-AC_CANONICAL_SYSTEM
-#AC_GNU_SOURCE
+AC_CANONICAL_TARGET
+#AC_USE_SYSTEM_EXTENSIONS
 
 AC_CONFIG_SRCDIR([src/mkxlblob.sh.in])
 AC_CONFIG_HEADERS([config.h])
