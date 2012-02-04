@@ -1,3 +1,19 @@
+commit 94a408a24f1ae14ab7c7f539d34148a1ab86e06b
+Author: Stephan Linz <linz@li-pro.net>
+Date:	Sat Feb 4 23:31:04 2012 +0100
+
+    Prepare release 1.2.3-456789
+
+    Signed-off-by: Stephan Linz <linz@li-pro.net>
+
+commit c31ab108c77a31f85d4d5fee3394a774d32b0084
+Author: Stephan Linz <linz@li-pro.net>
+Date:	Sat Feb 4 23:30:52 2012 +0100
+
+    Prepare release 1.1.0
+
+    Signed-off-by: Stephan Linz <linz@li-pro.net>
+
 commit 2833b39396099ceb1aebc331ac0a7a933d46536e
 Author: Stephan Linz <linz@li-pro.net>
 Date:	Sat Feb 4 23:28:53 2012 +0100
