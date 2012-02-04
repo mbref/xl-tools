@@ -65,7 +65,8 @@ NAME=3	# payload data content name (32 character string)
 DATE=4	# payload data content date (32 character string)
 BASE=5	# payload data base address (from elf file)
 SIZE=6	# payload data binary size  (from elf file)
-PAYLOAD_NUM=7
+TAEN=7	# payload data target endianess
+PAYLOAD_NUM=8
 
 #
 # array indices for global blob informations
@@ -638,7 +639,7 @@ xlblob_assembly_blob() {
 		--adjust-section-vma=.text=${bl[$ADDR]:=0} \
 		--adjust-section-vma=.data=${bl[$ADDR]:=0} \
 		--adjust-section-vma=.bss=${bl[$ADDR]:=0} \
-		-O elf32-microblaze ${bl[$OUTP]}.o ${bl[$OUTP]}.elf &&
+		-O ${pl[$TAEN]} ${bl[$OUTP]}.o ${bl[$OUTP]}.elf &&
 	_pl_data=$(${p[$CODP]} -t ${bl[$OUTP]}.elf | \
 		${p[$AWK]} '/_pl_data$/{ print "0x" $1 }') &&
 	${p[$COCP]} --add-section=.pld=${pl[$BIN]} \
@@ -685,6 +686,10 @@ xlblob_elf2bin() {
 
 	${p[$COCP]} -O binary ${elf} ${bin}
 
+	# target endianess from elf file for blob elf generator
+	declare +x taen=$(${p[$CODP]} -a ${elf} | \
+			${p[$AWK]} '/:/{ print $4 }')
+
 	# base address and code size from elf file
 	declare +x base=$(${p[$CODP]} -f ${elf} | \
 			${p[$AWK]} '/^start address/{ print $3 }')
@@ -701,8 +706,10 @@ xlblob_elf2bin() {
 		return 3
 	fi
 
+	eval $2[$TAEN]=\$\(printf "%s" \${taen}\)
 	eval $2[$BASE]=\$\(printf "0x%x" \${base}\)
 	eval $2[$SIZE]=\$\(printf "0x%x" \${size}\)
+
 	return 0
 }
 
