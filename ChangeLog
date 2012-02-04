@@ -1,4 +1,93 @@
-commit ecd98ba30a538afb9e95bfddfe79691d348411b6
+commit 5d88fe4773d0573920674d9761daf16b6ea65909
+Author: Stephan Linz <linz@li-pro.net>
+Date:	Sat Feb 4 23:41:20 2012 +0100
+
+    Prepare release 1.1.0
+
+    Signed-off-by: Stephan Linz <linz@li-pro.net>
+
+commit 6e4ff6fc25848159fdb8c8c8cc920d820bdf0215
+Author: Stephan Linz <linz@li-pro.net>
+Date:	Sat Feb 4 23:33:43 2012 +0100
+
+    Revert "Prepare release 1.1.0"
+
+    This reverts commit c31ab108c77a31f85d4d5fee3394a774d32b0084.
+
+commit 68fa747e42cd67e3bd0fa564ff8de6c2a20818a5
+Author: Stephan Linz <linz@li-pro.net>
+Date:	Sat Feb 4 23:33:30 2012 +0100
+
+    Revert "Prepare release 1.2.3-456789"
+
+    This reverts commit dab9aee66cc3def5c21286253f114fa264c5ea43.
+
+commit dab9aee66cc3def5c21286253f114fa264c5ea43
+Author: Stephan Linz <linz@li-pro.net>
+Date:	Sat Feb 4 23:31:04 2012 +0100
+
+    Prepare release 1.2.3-456789
+
+    Signed-off-by: Stephan Linz <linz@li-pro.net>
+
+commit c31ab108c77a31f85d4d5fee3394a774d32b0084
+Author: Stephan Linz <linz@li-pro.net>
+Date:	Sat Feb 4 23:30:52 2012 +0100
+
+    Prepare release 1.1.0
+
+    Signed-off-by: Stephan Linz <linz@li-pro.net>
+
+commit 2833b39396099ceb1aebc331ac0a7a933d46536e
+Author: Stephan Linz <linz@li-pro.net>
+Date:	Sat Feb 4 23:28:53 2012 +0100
+
+    change year in all copyright strings
+
+    Signed-off-by: Stephan Linz <linz@li-pro.net>
+
+commit 74a05d135080220b11dd47e07c21280ad9d488e8
+Author: Stephan Linz <linz@li-pro.net>
+Date:	Sat Feb 4 23:22:09 2012 +0100
+
+    fetch and use payload data target endianess
+
+    Signed-off-by: Stephan Linz <linz@li-pro.net>
+
+commit d8412a29943cb2acb86177a1509441f626d733f9
+Author: Stephan Linz <linz@li-pro.net>
+Date:	Sat Feb 4 23:20:55 2012 +0100
+
+    support little endian prefix in search list
+
+    Signed-off-by: Stephan Linz <linz@li-pro.net>
+
+commit f9ebd80e76feb872e9aec8e000ac2a0e5759d4cb
+Author: Stephan Linz <linz@li-pro.net>
+Date:	Mon Sep 19 16:36:55 2011 +0200
+
+    enable external versioning
+
+    Check and use the content of the runtime environment
+    variable PACKAGE_VERSION to change the version number
+    from external script.
+
+    Signed-off-by: Stephan Linz <linz@li-pro.net>
+
+commit 1eca7d71ede94a06b258d55f7a7c606caab4ac84
+Author: Stephan Linz <linz@li-pro.net>
+Date:	Sun Sep 18 20:13:18 2011 +0200
+
+    update to autoconf 2.65
+
+    this avoids autoreconf warnings like:
+
+      configure.ac:10: warning: The macro `AC_CANONICAL_SYSTEM' is obsolete.
+      configure.ac:10: You should run autoupdate.
+
+    Signed-off-by: Stephan Linz <linz@li-pro.net>
+
+commit 1a21fa17773cbc6041620174451b61dbb2b2c6cd
 Author: Stephan Linz <linz@li-pro.net>
 Date:	Wed Mar 9 21:56:33 2011 +0100
 
