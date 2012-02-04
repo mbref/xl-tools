@@ -166,7 +166,7 @@ xlboot_arch2prefix() {
 
 	case "$1" in
 	    "Microblaze")
-		echo "mb mb-linux microblaze-unknown-linux-gnu"
+		echo "mb mb-linux microblaze-unknown-linux-gnu microblazeel-unknown-linux-gnu"
 		;;
 	    *)
 		error "unknown architecture"
