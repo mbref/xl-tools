@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# (C) Copyright 2010-2011 Li-Pro.Net
+# (C) Copyright 2010-2012 Li-Pro.Net
 #
 # Stephan Linz <linz@li-pro.net>
 #
@@ -88,7 +88,7 @@ version() {
 }
 
 copyright() {
-	echo "$1Copyright (C) 2010-2011 Li-Pro.Net$2"
+	echo "$1Copyright (C) 2010-2012 Li-Pro.Net$2"
 	echo "$1This is free software; see the source for copying conditions.  There is NO$2"
 	echo "$1warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.$2"
 }
