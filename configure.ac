@@ -3,7 +3,7 @@
 AC_PREREQ(2.65)
 
 define(PNAME,[Xilinx Tools])dnl
-define(PVERS,[1.1.0])dnl
+define(PVERS,[1.1.1])dnl
 define(TNAME,[xl-tools])dnl
 
 syscmd(test -e .svn)dnl

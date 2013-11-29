@@ -1,4 +1,34 @@
-commit 5d88fe4773d0573920674d9761daf16b6ea65909
+commit feea5b1b66e373e49a2cf16ae2a1c96bbf4726b0
+Author: Stephan Linz <linz@li-pro.net>
+Date:	Fri Nov 29 19:32:27 2013 +0100
+
+    doc: fix typos in man page
+
+    Signed-off-by: Stephan Linz <linz@li-pro.net>
+
+commit 66c9372e2b1a68e71ccef5cfac684e320dfa173d
+Author: Stephan Linz <linz@li-pro.net>
+Date:	Fri Nov 29 19:32:04 2013 +0100
+
+    more cross tool prefixes for Microblaze
+
+    Signed-off-by: Stephan Linz <linz@li-pro.net>
+
+commit 425267ee618d040b4b15ae462ccf136689a6dd23
+Author: Stephan Linz <linz@li-pro.net>
+Date:	Fri Nov 29 19:26:33 2013 +0100
+
+    fix binary conversation (objcopy: elf -> bin)
+
+    Remove all well known useless section while convert
+    the elf image to a raw binary blob.
+
+    The sections are (primary found in Linux kernel 3.x):
+    '.note', '.comment', and '.note.gnu.build-id'.
+
+    Signed-off-by: Stephan Linz <linz@li-pro.net>
+
+commit 271531bb6b6a4d87cf61ce2beed8f0a15dac2a6a
 Author: Stephan Linz <linz@li-pro.net>
 Date:	Sat Feb 4 23:41:20 2012 +0100
 
