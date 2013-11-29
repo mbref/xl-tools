@@ -28,7 +28,7 @@ The
 .B mkxlblob
 command is used to create combined images for use with the XL-Boot boot loader. These images
 are refered as XL-Blob. The XL-Blob consists of a simple bootstub code and payload data. These
-payload data can contain a secon stage boot loader, the linux kernel, other os, firmware images,
+payload data can contain a second stage boot loader, the linux kernel, other os, firmware images,
 etc. The bootstub code is a simple PIC executable blob that copies payload data to its linked
 address and executes it.
 .PP
@@ -43,6 +43,7 @@ The combined images has the following structure:
 .B
 .IP 0x00
 \fB32 bit:\fP XL-Blob magic key \fI0xb8b40008\fP, Microblaze assembler mnemonic: \fIBRLID R5, 0x08\fP
+.B
 .IP 0x04
 \fB32 bit:\fP reserved, Microblaze assembler mnemonic: NOP
 .B
