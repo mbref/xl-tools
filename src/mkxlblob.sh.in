@@ -684,7 +684,8 @@ xlblob_elf2bin() {
 		return 2
 	fi
 
-	${p[$COCP]} -O binary ${elf} ${bin}
+	${p[$COCP]} -R .note -R .comment -R .note.gnu.build-id \
+			-O binary ${elf} ${bin}
 
 	# target endianess from elf file for blob elf generator
 	declare +x taen=$(${p[$CODP]} -a ${elf} | \
